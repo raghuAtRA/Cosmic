@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Cosmic.Commands.Upsert;
 
 namespace Cosmic.Commands
 {
@@ -58,9 +59,18 @@ namespace Cosmic.Commands
             var connectionFile = await File.ReadAllTextAsync($"{connectionsDir}/{containerData.ConnectionId}.json");
             var connection = JsonConvert.DeserializeObject<ConnectionData>(connectionFile);
 
-            Container = new CosmosClient(connection.ConnectionString)
+            var clientOptions = new CosmosClientOptions();
+            if (options is UpsertOptions)
+            {
+                clientOptions.AllowBulkExecution = true;
+                clientOptions.MaxRetryAttemptsOnRateLimitedRequests = 10;
+                clientOptions.MaxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromMinutes(5);
+                
+            }
+            Container = new CosmosClient(connection.ConnectionString, clientOptions)
                 .GetDatabase(containerData.DatabaseId)
                 .GetContainer(containerData.ContainerId);
+                
 
             return 0;
         }

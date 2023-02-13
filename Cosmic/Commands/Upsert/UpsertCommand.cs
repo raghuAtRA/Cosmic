@@ -5,14 +5,25 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Serilog;
+using Serilog.Core;
 
 namespace Cosmic.Commands.Upsert
 {
     public class UpsertCommand : OperationCommand<UpsertOptions>
     {
+        private readonly LoggingLevelSwitch _levelSwitch;
+
+        public UpsertCommand(LoggingLevelSwitch levelSwitch)
+        {
+            _levelSwitch = levelSwitch;
+        }
+        private int loaded = 0; 
         protected async override Task<int> ExecuteCommandAsync(UpsertOptions options)
         {
+            _levelSwitch.MinimumLevel = options.LogLevel;
             await base.ExecuteCommandAsync(options);
 
             IEnumerable<object> docs = null;
@@ -44,28 +55,55 @@ namespace Cosmic.Commands.Upsert
             }
             else
             {
-                docs = (await File.ReadAllLinesAsync(options.File))
+                docs =
+                    (await File.ReadAllLinesAsync(options.File))
                     .Select(x => JsonConvert.DeserializeObject(x));
             }
 
-            var loaded = 0;
-
-            var count = docs.Count();
+            var docArray = docs.ToArray();
+            var count = docArray.Count();
 
             Console.WriteLine($"Upserting {count} documents.");
-            
-            foreach (var doc in docs)
-            {
-                Console.WriteLine(JsonConvert.SerializeObject(doc));
-                var result = await Container.UpsertItemAsync(doc);
-                LogRequestCharge(result.RequestCharge);
-                if ((int)result.StatusCode >= 200 && (int)result.StatusCode <= 299)
-                {
-                    loaded++;
-                }
-            }
 
-            Console.WriteLine($"Upserted {loaded}/{count} documents.");
+            var jobs =
+                docArray
+                    .AsParallel()
+                    .Select(async (doc, index) =>
+                    {
+                        if (options.OutputDocument)
+                        {
+                            Console.WriteLine(JsonConvert.SerializeObject(doc));
+                        }
+
+                        //Console.WriteLine($"Uploading doc {index}");
+                        var result = await Container.UpsertItemAsync(doc);
+
+                        if ((int) result.StatusCode >= 200 && (int) result.StatusCode <= 299)
+                        {
+                            //Console.WriteLine($"completed uploading doc {index}");
+                            Interlocked.Increment(ref loaded);
+                            var value = Volatile.Read(ref loaded);
+                            if (value % 100 == 0)
+                            {
+                                Log.Debug($"Upserted {value}/{count} documents.");
+                            }
+                        }
+                    })
+                    .WithDegreeOfParallelism(options.Parallelism);
+            await Task.WhenAll(jobs);
+            Console.WriteLine($"Upserted {Volatile.Read(ref loaded)}/{count} documents.");
+            // foreach (var doc in docs)
+            // {
+            //     //Console.WriteLine(JsonConvert.SerializeObject(doc));
+            //     var result = await Container.UpsertItemAsync(doc);
+            //     LogRequestCharge(result.RequestCharge);
+            //     if ((int)result.StatusCode >= 200 && (int)result.StatusCode <= 299)
+            //     {
+            //         loaded++;
+            //     }
+            // }
+
+            // Console.WriteLine($"Upserted {loaded}/{count} documents.");
 
             return 0;
         }

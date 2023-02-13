@@ -1,9 +1,30 @@
 ﻿using CommandLine;
+using Serilog.Events;
 
 namespace Cosmic.Commands
 {
     public abstract class OperationOptions
     {
+        private LogEventLevel _logLevel = LogEventLevel.Information;
+
+        [Option('v', "log-level", HelpText = "logging level")]
+        public string LogLevelArg
+        {
+            set
+            {
+                LogEventLevel level;
+                if (LogEventLevel.TryParse(value, true, out level))
+                {
+                    _logLevel = level;
+                }
+            }
+        }
+
+        public LogEventLevel LogLevel
+        {
+            get => _logLevel;
+        }
+
         [Option('c', "container-path", HelpText = "Container path e.g. <connection>/<database>/<container>")]
         public string ContainerPath { get; set; }
 

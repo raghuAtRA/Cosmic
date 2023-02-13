@@ -9,11 +9,25 @@ namespace Cosmic.Commands.Upsert
     [Example("upsert \"{'id':'%I%'}\" -l 3", HelpText = "Loop and load 3 documents.")]
     public class UpsertOptions : OperationOptions
     {
+        private int _parallelism = 1;
+        private bool _outputDocument = false;
+
         [Option('d', "output-document", HelpText = "Output document before result.")]
-        public bool OutputDocument { get; set; }
+        public bool OutputDocument
+        {
+            get => _outputDocument;
+            set => _outputDocument = value;
+        }
 
         [Option('f', "file", HelpText = "File e.g. 'data.json'")]
         public string File { get; set; }
+
+        [Option('p', "parallel", HelpText = "number of parallel jobs")]
+        public int Parallelism
+        {
+            get => _parallelism;
+            set => _parallelism = value;
+        }
 
         [Value(1, HelpText = "One or more json documents e.g. '{\'id\':\'foo\'}'.")]
         public string Documents { get; set; }
