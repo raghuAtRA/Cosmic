@@ -4,7 +4,7 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net6.0</TargetFramework>
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>cosmic</ToolCommandName>
+    <ToolCommandName>cosmic-ra</ToolCommandName>
     <PackageOutputPath>./nupkg</PackageOutputPath>
     <Authors>Roger Creyke</Authors>
     <Copyright>Copyright (c) 2019 Roger Creyke</Copyright>
