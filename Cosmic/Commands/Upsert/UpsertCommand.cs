@@ -9,24 +9,84 @@ using System.Threading;
 using System.Threading.Tasks;
 using Serilog;
 using Serilog.Core;
+using System.Threading.Channels;
 
 namespace Cosmic.Commands.Upsert
 {
     public class UpsertCommand : OperationCommand<UpsertOptions>
     {
         private readonly LoggingLevelSwitch _levelSwitch;
-
+        private readonly Channel<object> dataChannel;
+        private ChannelWriter<object> writer;
+        private ChannelReader<object> _reader;
         public UpsertCommand(LoggingLevelSwitch levelSwitch)
         {
             _levelSwitch = levelSwitch;
+            var channelOptioons = new BoundedChannelOptions(1000)
+            {
+                SingleReader = false,
+                SingleWriter = true,
+                FullMode = BoundedChannelFullMode.Wait
+            };
+            dataChannel = Channel.CreateBounded<object>(channelOptioons);
+            _reader = dataChannel.Reader;
         }
-        private int loaded = 0; 
+
+        private async Task WriterTask(string file)
+        {
+            Log.Debug("Starting publisher with file {file}", file);
+
+            var lineNo = 1;
+            using (var sr = new StreamReader(file))
+            {
+                while (!sr.EndOfStream)
+                {
+                    var line = await sr.ReadLineAsync();
+                    Log.Debug("Wrote line {line}", lineNo++);
+                    var json = JsonConvert.DeserializeObject(line);
+                    await writer.WriteAsync(json);
+                }
+                writer.Complete();
+            }
+        }
+        private async ValueTask Process(UpsertOptions options)
+        {
+            while (await _reader.WaitToReadAsync())
+            {
+                await foreach(object json in _reader.ReadAllAsync())
+                {
+                    if (options.OutputDocument)
+                    {
+                        Console.WriteLine(JsonConvert.SerializeObject(json));
+                    }
+
+                    //Console.WriteLine($"Uploading doc {index}");
+                    var result = await Container.UpsertItemAsync(json);
+
+                    if ((int) result.StatusCode >= 200 && (int) result.StatusCode <= 299)
+                    {
+                        //Console.WriteLine($"completed uploading doc {index}");
+                        Interlocked.Increment(ref loaded);
+                        var value = Volatile.Read(ref loaded);
+                        Log.Debug("Upserted {count} document ", value);
+                        if (value % 100 == 0)
+                        {
+                            Log.Debug($"Upserted {value} documents.");
+                        }
+                    }
+                    
+                }
+            }
+        }
+        private int loaded = 0;
+
         protected async override Task<int> ExecuteCommandAsync(UpsertOptions options)
         {
             _levelSwitch.MinimumLevel = options.LogLevel;
             await base.ExecuteCommandAsync(options);
 
-            IEnumerable<object> docs = null;
+            writer = dataChannel.Writer;
+            Task<IEnumerable<object>> docs = null;
 
             if (options.File == null)
             {
@@ -51,59 +111,18 @@ namespace Cosmic.Commands.Upsert
 
                 documents = new AliasProcessor().Process(documents, DateTime.UtcNow, iterator);
 
-                docs = new object[] { JsonConvert.DeserializeObject<object>(documents) };
+                docs = Task.FromResult(new object[] {JsonConvert.DeserializeObject(documents)}.AsEnumerable());
             }
             else
             {
-                docs =
-                    (await File.ReadAllLinesAsync(options.File))
-                    .Select(x => JsonConvert.DeserializeObject(x));
+                // docs = await File.ReadAllLinesAsync(options.File);
             }
 
-            var docArray = docs.ToArray();
-            var count = docArray.Count();
-
-            Console.WriteLine($"Upserting {count} documents.");
-
-            var jobs =
-                docArray
-                    .AsParallel()
-                    .Select(async (doc, index) =>
-                    {
-                        if (options.OutputDocument)
-                        {
-                            Console.WriteLine(JsonConvert.SerializeObject(doc));
-                        }
-
-                        //Console.WriteLine($"Uploading doc {index}");
-                        var result = await Container.UpsertItemAsync(doc);
-
-                        if ((int) result.StatusCode >= 200 && (int) result.StatusCode <= 299)
-                        {
-                            //Console.WriteLine($"completed uploading doc {index}");
-                            Interlocked.Increment(ref loaded);
-                            var value = Volatile.Read(ref loaded);
-                            if (value % 100 == 0)
-                            {
-                                Log.Debug($"Upserted {value}/{count} documents.");
-                            }
-                        }
-                    })
-                    .WithDegreeOfParallelism(options.Parallelism);
-            await Task.WhenAll(jobs);
-            Console.WriteLine($"Upserted {Volatile.Read(ref loaded)}/{count} documents.");
-            // foreach (var doc in docs)
-            // {
-            //     //Console.WriteLine(JsonConvert.SerializeObject(doc));
-            //     var result = await Container.UpsertItemAsync(doc);
-            //     LogRequestCharge(result.RequestCharge);
-            //     if ((int)result.StatusCode >= 200 && (int)result.StatusCode <= 299)
-            //     {
-            //         loaded++;
-            //     }
-            // }
-
-            // Console.WriteLine($"Upserted {loaded}/{count} documents.");
+            var writerTask = WriterTask(options.File);
+            var readerTask = Process(options).AsTask();
+            //var docArray = docs
+            await Task.WhenAll(writerTask, readerTask);
+            Console.WriteLine($"Upserted {Volatile.Read(ref loaded)} documents.");
 
             return 0;
         }
