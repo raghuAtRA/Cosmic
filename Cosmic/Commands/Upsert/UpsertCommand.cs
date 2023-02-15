@@ -3,6 +3,7 @@ using Cosmic.Extensions;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -19,66 +20,60 @@ namespace Cosmic.Commands.Upsert
         private readonly Channel<object> dataChannel;
         private ChannelWriter<object> writer;
         private ChannelReader<object> _reader;
+        private int count = 0;
         public UpsertCommand(LoggingLevelSwitch levelSwitch)
         {
             _levelSwitch = levelSwitch;
-            var channelOptioons = new BoundedChannelOptions(1000)
-            {
-                SingleReader = false,
-                SingleWriter = true,
-                FullMode = BoundedChannelFullMode.Wait
-            };
-            dataChannel = Channel.CreateBounded<object>(channelOptioons);
+            dataChannel = Channel.CreateBounded<object>(1000);
             _reader = dataChannel.Reader;
         }
 
-        private async Task WriterTask(string file)
+        private async Task PublisherTask(string file)
         {
-            Log.Debug("Starting publisher with file {file}", file);
 
-            var lineNo = 1;
+            var sw = new Stopwatch();
+            sw.Start();
             using (var sr = new StreamReader(file))
             {
                 while (!sr.EndOfStream)
                 {
                     var line = await sr.ReadLineAsync();
-                    Log.Debug("Wrote line {line}", lineNo++);
+                    Log.Verbose("Wrote line {line}", count++);
                     var json = JsonConvert.DeserializeObject(line);
                     await writer.WriteAsync(json);
                 }
                 writer.Complete();
             }
+            sw.Stop();
+            Log.Debug("Producer: {file}; Count: {count}: Elapsed: {elapsed}ms", file, count, sw.ElapsedMilliseconds);
         }
-        private async ValueTask Process(UpsertOptions options)
+
+        private int loaded = 0;
+        private Task ProcessorTask(UpsertOptions options)
         {
-            while (await _reader.WaitToReadAsync())
-            {
-                await foreach(object json in _reader.ReadAllAsync())
+            var enu = _reader.ReadAllAsync();
+            var tasks = 
+                enu.Select(async json =>
                 {
                     if (options.OutputDocument)
                     {
                         Console.WriteLine(JsonConvert.SerializeObject(json));
                     }
 
-                    //Console.WriteLine($"Uploading doc {index}");
                     var result = await Container.UpsertItemAsync(json);
 
                     if ((int) result.StatusCode >= 200 && (int) result.StatusCode <= 299)
                     {
-                        //Console.WriteLine($"completed uploading doc {index}");
-                        Interlocked.Increment(ref loaded);
+                        Interlocked.Increment(ref this.loaded);
                         var value = Volatile.Read(ref loaded);
-                        Log.Debug("Upserted {count} document ", value);
                         if (value % 100 == 0)
                         {
-                            Log.Debug($"Upserted {value} documents.");
+                            Log.Debug($"Upserted {value}/{count} documents.");
                         }
                     }
-                    
-                }
-            }
+                }).ToEnumerable();
+            return Task.WhenAll(tasks);
         }
-        private int loaded = 0;
 
         protected async override Task<int> ExecuteCommandAsync(UpsertOptions options)
         {
@@ -118,10 +113,10 @@ namespace Cosmic.Commands.Upsert
                 // docs = await File.ReadAllLinesAsync(options.File);
             }
 
-            var writerTask = WriterTask(options.File);
-            var readerTask = Process(options).AsTask();
+            var publisherTask = PublisherTask(options.File);
+            var processorTask = ProcessorTask(options);
             //var docArray = docs
-            await Task.WhenAll(writerTask, readerTask);
+            await Task.WhenAll(publisherTask, processorTask);
             Console.WriteLine($"Upserted {Volatile.Read(ref loaded)} documents.");
 
             return 0;
