@@ -24,7 +24,7 @@ namespace Cosmic.Commands.Upsert
         public UpsertCommand(LoggingLevelSwitch levelSwitch)
         {
             _levelSwitch = levelSwitch;
-            dataChannel = Channel.CreateBounded<object>(1000);
+            dataChannel = Channel.CreateBounded<object>(100);
             _reader = dataChannel.Reader;
         }
 
@@ -33,6 +33,7 @@ namespace Cosmic.Commands.Upsert
 
             var sw = new Stopwatch();
             sw.Start();
+            var tasks = new List<Task>();
             using (var sr = new StreamReader(file))
             {
                 while (!sr.EndOfStream)
@@ -40,12 +41,18 @@ namespace Cosmic.Commands.Upsert
                     var line = await sr.ReadLineAsync();
                     Log.Verbose("Wrote line {line}", count++);
                     var json = JsonConvert.DeserializeObject(line);
-                    await writer.WriteAsync(json);
+                    tasks.Add(writer.WriteAsync(json).AsTask());
                 }
-                writer.Complete();
             }
-            sw.Stop();
-            Log.Debug("Producer: {file}; Count: {count}: Elapsed: {elapsed}ms", file, count, sw.ElapsedMilliseconds);
+
+            await Task.WhenAll(tasks)
+            .ContinueWith(t =>
+                {
+                    writer.Complete();
+                    sw.Stop();
+                    Log.Debug("Producer: {file}; Count: {count}: Elapsed: {elapsed}ms", file, count,
+                        sw.ElapsedMilliseconds);
+                });
         }
 
         private int loaded = 0;
@@ -122,4 +129,5 @@ namespace Cosmic.Commands.Upsert
             return 0;
         }
     }
+
 }
