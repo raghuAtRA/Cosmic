@@ -73,10 +73,10 @@ jobs:
 
     # Restore the application to populate the obj folder with RuntimeIdentifiers
     - name: Build the application
-      run: dotnet publish -r $PROJECT --self-contained -r $Platform -o $PUBLISH
+      run: dotnet publish -r ${{env.PROJECT}} --self-contained -o ${{env.PUBLISH}} -r ${{platform}}
       #run: dotnet publish $env:Solution_Name /t:Restore /p:Configuration=$env:Configuration
       env:
-        Platform: ${{ matrix.platform }}
+        platform: ${{ matrix.platform }}
 
     # Upload the MSIX package: https://github.com/marketplace/actions/upload-a-build-artifact
     - name: Upload build artifacts
