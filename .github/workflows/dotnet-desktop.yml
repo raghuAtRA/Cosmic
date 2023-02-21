@@ -77,14 +77,15 @@ jobs:
         echo "platform: $platform"
         echo "project: ${{env.PROJECT}}"
         dotnet publish ${{env.PROJECT}} --self-contained -o ${{env.PUBLISH}} -r $platform
-      #run: dotnet publish $env:Solution_Name /t:Restore /p:Configuration=$env:Configuration
       env:
         platform: ${{ matrix.platform }}
 
-    # Upload the MSIX package: https://github.com/marketplace/actions/upload-a-build-artifact
     - name: Upload build artifacts
       uses: actions/upload-artifact@v3
       with:
+        name: cosmic-${{ env.platform }}
         path: |
           ${{ env.PUBLISH}}/Cosmic
           ${{ env.PUBLISH}}/Cosmic.exe
+      env:
+        platform: ${{ matrix.platform }}
