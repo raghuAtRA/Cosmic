@@ -56,7 +56,7 @@ jobs:
                              # https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on
 
     env:
-      PROJECT: src/Cosmic.csproj
+      PROJECT: Cosmic/Cosmic.csproj
       PUBLISH: artifacts
       
     steps:
@@ -73,7 +73,10 @@ jobs:
 
     # Restore the application to populate the obj folder with RuntimeIdentifiers
     - name: Build the application
-      run: dotnet publish -r ${{env.PROJECT}} --self-contained -o ${{env.PUBLISH}} -r ${platform}
+      run: |
+        echo "platform: $platform"
+        echo "project: ${{env.PROJECT}}"
+        dotnet publish -r ${{env.PROJECT}} --self-contained -o ${{env.PUBLISH}} -r $platform
       #run: dotnet publish $env:Solution_Name /t:Restore /p:Configuration=$env:Configuration
       env:
         platform: ${{ matrix.platform }}
