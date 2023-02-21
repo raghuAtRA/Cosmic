@@ -89,3 +89,11 @@ jobs:
           ${{ env.PUBLISH}}/Cosmic.exe
       env:
         platform: ${{ matrix.platform }}
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: (github.ref == 'refs/heads/master')
+      with:
+        files: |
+          ${{ env.PUBLISH}}/Cosmic
+          ${{ env.PUBLISH}}/Cosmic.exe
