@@ -48,16 +48,17 @@ namespace Cosmic.Commands.Upsert
             await Task.WhenAll(tasks)
             .ContinueWith(t =>
                 {
-                    writer.Complete();
                     sw.Stop();
-                    Log.Debug("Producer: {file}; Count: {count}: Elapsed: {elapsed}ms", file, count,
+                    Log.Information("Producer: {file}; Count: {count}: Elapsed: {elapsed}ms", file, count,
                         sw.ElapsedMilliseconds);
+                    writer.Complete();
                 });
         }
 
         private int loaded = 0;
         private Task ProcessorTask(UpsertOptions options)
         {
+            var sw = new Stopwatch(); sw.Start();
             var enu = _reader.ReadAllAsync();
             var tasks = 
                 enu.Select(async json =>
@@ -73,13 +74,35 @@ namespace Cosmic.Commands.Upsert
                     {
                         Interlocked.Increment(ref this.loaded);
                         var value = Volatile.Read(ref loaded);
-                        if (value % 100 == 0)
+                        if (options.Progress > 0 && value % options.Progress == 0)
                         {
+                            if ((value / options.Progress) * options.Progress >= count)
+                            {
+                                Console.WriteLine(".");
+                            }
+                            else
+                            {
+                                Console.Write(".");
+                            }
                             Log.Debug($"Upserted {value}/{count} documents.");
                         }
                     }
+                    else
+                    {
+                        Log.Error("Error uploading document {status}", result.StatusCode);
+                    }
+
+                    return result;
                 }).ToEnumerable();
-            return Task.WhenAll(tasks);
+            return Task.WhenAll(tasks)
+                .ContinueWith(t =>
+                {
+                    var totalRus = t.Result.Sum(ir => ir.RequestCharge);
+                    sw.Stop();
+                    Log.Information("{count} documents upserted in {elapsed}s. Rate: {rate} docs/s, Total Rus {totalRus} ", count,
+                        sw.Elapsed.TotalSeconds, count / sw.Elapsed.TotalSeconds, totalRus);
+
+                });
         }
 
         protected async override Task<int> ExecuteCommandAsync(UpsertOptions options)

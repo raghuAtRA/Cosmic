@@ -9,8 +9,9 @@ namespace Cosmic.Commands.Upsert
     [Example("upsert \"{'id':'%I%'}\" -l 3", HelpText = "Loop and load 3 documents.")]
     public class UpsertOptions : OperationOptions
     {
-        private int _parallelism = 1;
         private bool _outputDocument = false;
+
+        private int _progress = 1000;
 
         [Option('d', "output-document", HelpText = "Output document before result.")]
         public bool OutputDocument
@@ -22,11 +23,11 @@ namespace Cosmic.Commands.Upsert
         [Option('f', "file", HelpText = "File e.g. 'data.json'")]
         public string File { get; set; }
 
-        [Option('p', "parallel", HelpText = "number of parallel jobs")]
-        public int Parallelism
+        [Option('p', "progress", HelpText = "print progress mark - '.' for every x docs upserted; default: 1000. Set to 0 to disable")]
+        public int Progress
         {
-            get => _parallelism;
-            set => _parallelism = value;
+            get => _progress;
+            set => _progress = value;
         }
 
         [Value(1, HelpText = "One or more json documents e.g. '{\'id\':\'foo\'}'.")]
