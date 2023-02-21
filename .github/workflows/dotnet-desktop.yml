@@ -76,7 +76,7 @@ jobs:
       run: |
         echo "platform: $platform"
         echo "project: ${{env.PROJECT}}"
-        dotnet publish -r ${{env.PROJECT}} --self-contained -o ${{env.PUBLISH}} -r $platform
+        dotnet publish ${{env.PROJECT}} --self-contained -o ${{env.PUBLISH}} -r $platform
       #run: dotnet publish $env:Solution_Name /t:Restore /p:Configuration=$env:Configuration
       env:
         platform: ${{ matrix.platform }}
