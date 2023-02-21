@@ -90,6 +90,16 @@ jobs:
       env:
         platform: ${{ matrix.platform }}
 
+    - name: Determine next tag
+      if: (github.ref == 'refs/heads/master')
+      id: next_tag
+      uses: anothrNick/github-tag-action@1.50.0
+      env:
+        GITHUB_TOKEN: ${{secrets.RELEASE_PAT}}
+        DEFAULT_BUMP: patch
+        RELEASE_BRANCHES: master
+        INITIAL_VERSION: 1.0.17
+
     - name: Release
       uses: softprops/action-gh-release@v1
       if: (github.ref == 'refs/heads/master')
@@ -97,3 +107,5 @@ jobs:
         files: |
           ${{ env.PUBLISH}}/Cosmic
           ${{ env.PUBLISH}}/Cosmic.exe
+        token: ${{secrets.RELEASE_PAT}}
+        tag_name: ${{steps.next_tag.outputs.new_tag}}
